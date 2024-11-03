@@ -219,7 +219,10 @@ def get_sliced_prediction(
         overlap_width_ratio=overlap_width_ratio,
         auto_slice_resolution=auto_slice_resolution,
     )
-
+    if verbose == 1 or verbose==2:
+        print(image.shape)
+        print(f"Number of slices: {len(slice_image_result)}")
+        print(slice_image_result[0].keys())
     num_slices = len(slice_image_result)
     time_end = time.time() - time_start
     durations_in_seconds["slice"] = time_end
@@ -241,6 +244,10 @@ def get_sliced_prediction(
 
     # create prediction input
     num_group = int(num_slices / num_batch)
+    if verbose == 1 or verbose==2:
+        print(f"Number of batches: {num_batch}")
+        print(f"Number of groups: {num_group}")
+    
     if verbose == 1 or verbose == 2:
         tqdm.write(f"Performing prediction on {num_slices} slices.")
     object_prediction_list = []
@@ -271,7 +278,33 @@ def get_sliced_prediction(
             else:
                 if object_prediction_list_per_slice:  # if not empty
                     object_prediction_list.append(object_prediction_list_per_slice.get_shifted_object_prediction())
-
+    leftover = num_slices - num_group * num_batch
+    if leftover > 0:
+        image_list = []
+        shift_amount_list = []
+        for image_ind in range(leftover):
+            image_list.append(slice_image_result.images[num_group * num_batch + image_ind])
+            shift_amount_list.append(slice_image_result.starting_pixels[num_group * num_batch + image_ind])
+        # perform batch prediction
+        prediction_result = get_prediction(
+            image=image_list[0:leftover],
+            detection_model=detection_model,
+            shift_amount=shift_amount_list[0:leftover],
+            full_shape=[
+                slice_image_result.original_image_height,
+                slice_image_result.original_image_width,
+            ],
+            num_batch=leftover,
+        )
+        for object_prediction_list_per_slice in prediction_result.object_prediction_list:
+            if isinstance(object_prediction_list_per_slice, list):  # needed for yolov6
+                for object_prediction in object_prediction_list_per_slice:
+                    if object_prediction:  # if not empty
+                        object_prediction_list.append(object_prediction.get_shifted_object_prediction())
+            else:
+                if object_prediction_list_per_slice:  # if not empty
+                    object_prediction_list.append(object_prediction_list_per_slice.get_shifted_object_prediction())
+    
     # perform standard prediction
     if num_slices > 1 and perform_standard_pred:
         prediction_result = get_prediction(
